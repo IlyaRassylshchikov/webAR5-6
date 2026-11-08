@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Задание 5: Three.js WebAR - PBR, Освещение и UI</title>
+  
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at center, #1b2038 0%, #0c0e18 100%);
+      color: #fff;
+      user-select: none;
+    }
+
+    /* Верхняя панель статуса */
+    #header-bar {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 18px;
+      background: rgba(18, 22, 36, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      backdrop-filter: blur(12px);
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    #status-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: #a0aec0;
+    }
+    #status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #ecc94b;
+      box-shadow: 0 0 8px #ecc94b;
+    }
+    #status-dot.active {
+      background: #48bb78;
+      box-shadow: 0 0 8px #48bb78;
+    }
+
+    /* Кнопка входа в WebXR */
+    #btn-ar-launch {
+      position: fixed;
+      bottom: 24px;
+      right: 20px;
+      padding: 14px 24px;
+      background: linear-gradient(135deg, #3182ce, #805ad5);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 6px 20px rgba(128, 90, 213, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+    #btn-ar-launch:active {
+      transform: scale(0.95);
+      opacity: 0.9;
+    }
+
+    /* Меню управления объектом (UI Controls) */
+    #controls-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 32px);
+      max-width: 440px;
+      background: rgba(16, 20, 34, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 20px;
+      padding: 14px 18px;
+      backdrop-filter: blur(16px);
+      z-index: 1000;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .control-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #a0aec0;
+      min-width: 70px;
+    }
+    .btn-group {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+    }
+    .ui-btn {
+      flex: 1;
+      padding: 7px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .ui-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+    }
+    .ui-btn.active {
+      background: #4299e1;
+      border-color: #63b3ed;
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(66, 153, 225, 0.4);
+    }
+
+    /* Цветовая палитра */
+    .color-pill {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .color-pill.active {
+      border-color: #fff;
+      transform: scale(1.2);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+    }
+
+    /* Подсказка Hit-test */
+    #hint-overlay {
+      position: fixed;
+      top: 66px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: #cbd5e0;
+      z-index: 1000;
+      pointer-events: none;
+      text-align: center;
+      display: none;
+    }
+
+    /* Навигация на другие задания */
+    #task-nav {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 1000;
+      display: flex;
+      gap: 6px;
+    }
+    .nav-chip {
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-decoration: none;
+      color: #a0aec0;
+      background: rgba(18, 22, 36, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+    }
+    .nav-chip:hover {
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Навигация -->
+  <div id="task-nav">
+    <a href="index.html" class="nav-chip">‹ Задание 3</a>
+    <a href="task4.html" class="nav-chip">Задание 4</a>
+  </div>
+
+  <!-- Статус -->
+  <div id="header-bar">
+    <span id="status-dot"></span>
+    <span id="status-text">Готов к работе (3D Preview)</span>
+  </div>
+
+  <div id="hint-overlay">Наведите камеру на пол/стол и коснитесь экрана</div>
+
+  <button id="btn-ar-launch">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M5 3H3v2M19 3h2v2M5 21H3v-2M19 21h2v-2M12 7l5 3-5 3-5-3 5-3zM7 13l5 3 5-3M7 17l5 3 5-3"/>
+    </svg>
+    Войти в AR
+  </button>
+
+  <!-- Интерактивная UI-панель управления объектом -->
+  <div id="controls-panel">
+    <!-- Модель / Форма -->
+    <div class="control-row">
+      <span class="control-label">Форма</span>
+      <div class="btn-group">
+        <button class="ui-btn active" data-model="crystal">Кристалл</button>
+        <button class="ui-btn" data-model="torus">Тор-ядро</button>
+        <button class="ui-btn" data-model="cube">Куб PBR</button>
+      </div>
+    </div>
+
+    <!-- PBR Цвет -->
+    <div class="control-row">
+      <span class="control-label">Цвет</span>
+      <div class="btn-group" style="justify-content: space-around;">
+        <div class="color-pill active" data-color="#00d2d3" style="background: #00d2d3;"></div>
+        <div class="color-pill" data-color="#ff6b6b" style="background: #ff6b6b;"></div>
+        <div class="color-pill" data-color="#feca57" style="background: #feca57;"></div>
+        <div class="color-pill" data-color="#a55eea" style="background: #a55eea;"></div>
+        <div class="color-pill" data-color="#ffffff" style="background: #ffffff;"></div>
+      </div>
+    </div>
+
+    <!-- Вращение и анимация -->
+    <div class="control-row">
+      <span class="control-label">Вращение</span>
+      <div class="btn-group">
+        <button class="ui-btn" id="btn-rot-left">↶ Влево</button>
+        <button class="ui-btn active" id="btn-rot-auto">⚡ Авто</button>
+        <button class="ui-btn" id="btn-rot-right">↷ Вправо</button>
+      </div>
+    </div>
+
+    <!-- Масштаб -->
+    <div class="control-row">
+      <span class="control-label">Размер</span>
+      <div class="btn-group">
+        <button class="ui-btn" id="btn-scale-down">− Уменьшить</button>
+        <button class="ui-btn" id="btn-scale-reset">100%</button>
+        <button class="ui-btn" id="btn-scale-up">+ Увеличить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Главный скрипт модульного приложения -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    /* =====================================================================
+       МОДУЛЬ 1: SceneManager
+       Отвечает за рендерер, сцену, камеру, свет и HDRI-окружение
+       ===================================================================== */
+    class SceneManager {
+      constructor() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+        this.camera.position.set(0, 0.4, 0.8);
+        this.camera.lookAt(0, 0.1, 0);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.xr.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(this.renderer.domElement);
+
+        this.setupEnvironmentAndLighting();
+        this.setupResize();
+      }
+
+      setupEnvironmentAndLighting() {
+        // Создание HDRI / Environment карты через RoomEnvironment и PMREMGenerator
+        const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+        pmremGenerator.compileEquirectangularShader();
+        const roomEnv = new RoomEnvironment();
+        this.scene.environment = pmremGenerator.fromScene(roomEnv).texture;
+
+        // Прямое и фоновое освещение для PBR
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
+        dirLight.position.set(2, 4, 3);
+        this.scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0x6c5ce7, 1.2);
+        fillLight.position.set(-2, 2, -2);
+        this.scene.add(fillLight);
+      }
+
+      setupResize() {
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+    }
+
+    /* =====================================================================
+       МОДУЛЬ 2: ObjectManager
+       Управляет PBR-материалами, переключением геометрии и анимацией
+       ===================================================================== */
+    class ObjectManager {
+      constructor(scene) {
+        this.scene = scene;
+        this.currentColor = 0x00d2d3;
+        this.currentScale = 1.0;
+        this.autoRotate = true;
+        this.currentType = 'crystal';
+
+        // Базовый PBR-материал высокого качества
+        this.pbrMaterial = new THREE.MeshStandardMaterial({
+          color: this.currentColor,
+          metalness: 0.85,
+          roughness: 0.18,
+          envMapIntensity: 1.5
+        });
+
+        // Контейнер объекта (Group)
+        this.rootGroup = new THREE.Group();
+        this.rootGroup.position.set(0, 0, 0);
+        this.scene.add(this.rootGroup);
+
+        // Инициализация стартовой модели
+        this.mesh = this.buildGeometry(this.currentType);
+        this.rootGroup.add(this.mesh);
+
+        // Вспомогательный подиум для режима 3D Preview
+        this.pedestal = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.2, 0.22, 0.02, 32),
+          new THREE.MeshStandardMaterial({ color: 0x1f2438, metalness: 0.5, roughness: 0.6 })
+        );
+        this.pedestal.position.y = -0.01;
+        this.rootGroup.add(this.pedestal);
+      }
+
+      buildGeometry(type) {
+        let geom;
+        if (type === 'crystal') {
+          geom = new THREE.OctahedronGeometry(0.14, 0);
+        } else if (type === 'torus') {
+          geom = new THREE.TorusKnotGeometry(0.09, 0.03, 100, 16);
+        } else {
+          geom = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+        }
+        const mesh = new THREE.Mesh(geom, this.pbrMaterial);
+        mesh.position.y = 0.12;
+        return mesh;
+      }
+
+      setModel(type) {
+        this.currentType = type;
+        this.rootGroup.remove(this.mesh);
+        this.mesh = this.buildGeometry(type);
+        this.mesh.scale.setScalar(this.currentScale);
+        this.rootGroup.add(this.mesh);
+      }
+
+      setColor(hexColor) {
+        this.currentColor = hexColor;
+        this.pbrMaterial.color.set(hexColor);
+      }
+
+      rotateY(delta) {
+        if (this.mesh) {
+          this.mesh.rotation.y += delta;
+        }
+      }
+
+      changeScale(delta) {
+        this.currentScale = Math.max(0.3, Math.min(2.5, this.currentScale + delta));
+        if (this.mesh) {
+          this.mesh.scale.setScalar(this.currentScale);
+        }
+      }
+
+      resetScale() {
+        this.currentScale = 1.0;
+        if (this.mesh) {
+          this.mesh.scale.set(1, 1, 1);
+        }
+      }
+
+      update(dt) {
+        if (this.autoRotate && this.mesh) {
+          this.mesh.rotation.y += 0.8 * dt;
+          this.mesh.rotation.x = Math.sin(Date.now() * 0.0015) * 0.15;
+        }
+      }
+    }
+
+    /* =====================================================================
+       МОДУЛЬ 3: ARController
+       Отвечает за WebXR immersive-ar сессию, hit-test и DOM-overlay
+       ===================================================================== */
+    class ARController {
+      constructor(sceneManager, objectManager) {
+        this.sm = sceneManager;
+        this.om = objectManager;
+        this.hitSource = null;
+        this.hitSourceRequested = false;
+        this.isAR = false;
+
+        this.btnLaunch = document.getElementById('btn-ar-launch');
+        this.hintOverlay = document.getElementById('hint-overlay');
+        this.statusDot = document.getElementById('status-dot');
+        this.statusText = document.getElementById('status-text');
+
+        // Ретикл (маркер поверхности)
+        const ringGeom = new THREE.RingGeometry(0.07, 0.09, 32).rotateX(-Math.PI / 2);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x4fd1c5, side: THREE.DoubleSide });
+        this.reticle = new THREE.Mesh(ringGeom, ringMat);
+        this.reticle.matrixAutoUpdate = false;
+        this.reticle.visible = false;
+        this.sm.scene.add(this.reticle);
+
+        this.initEventListeners();
+      }
+
+      initEventListeners() {
+        this.btnLaunch.addEventListener('click', () => this.toggleAR());
+      }
+
+      async toggleAR() {
+        if (!navigator.xr) {
+          alert('WebXR не поддерживается в этом браузере. Запустите в Google Chrome на Android.');
+          return;
+        }
+
+        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+        if (!supported) {
+          alert('Режим immersive-ar не поддерживается вашим устройством.');
+          return;
+        }
+
+        // Запуск сессии с DOM Overlay (HTML интерфейс остаётся активным в AR!)
+        const session = await navigator.xr.requestSession('immersive-ar', {
+          requiredFeatures: ['hit-test', 'local-floor'],
+          optionalFeatures: ['dom-overlay'],
+          domOverlay: { root: document.body }
+        });
+
+        this.sm.renderer.xr.setReferenceSpaceType('local-floor');
+        await this.sm.renderer.xr.setSession(session);
+
+        this.isAR = true;
+        this.btnLaunch.style.display = 'none';
+        this.hintOverlay.style.display = 'block';
+        this.statusDot.classList.add('active');
+        this.statusText.textContent = 'AR-сессия активна';
+
+        // Скрываем подложку в AR-режиме, так как пол теперь реальный
+        this.om.pedestal.visible = false;
+        this.om.rootGroup.visible = false;
+
+        session.addEventListener('select', () => this.onTap());
+        session.addEventListener('end', () => this.onAREnd());
+      }
+
+      onTap() {
+        if (!this.reticle.visible) return;
+
+        // Фиксация объекта в точке hit-test на реальной плоскости
+        this.om.rootGroup.position.setFromMatrixPosition(this.reticle.matrix);
+        this.om.rootGroup.visible = true;
+
+        this.hintOverlay.textContent = 'Объект зафиксирован! Используйте кнопки для управления.';
+      }
+
+      onAREnd() {
+        this.isAR = false;
+        this.hitSource = null;
+        this.hitSourceRequested = false;
+        this.reticle.visible = false;
+        this.om.pedestal.visible = true;
+        this.om.rootGroup.visible = true;
+        this.om.rootGroup.position.set(0, 0, 0);
+
+        this.btnLaunch.style.display = 'flex';
+        this.hintOverlay.style.display = 'none';
+        this.statusDot.classList.remove('active');
+        this.statusText.textContent = 'Готов к работе (3D Preview)';
+      }
+
+      updateHitTest(frame) {
+        if (!frame || !this.isAR) return;
+
+        const session = this.sm.renderer.xr.getSession();
+
+        if (!this.hitSourceRequested) {
+          session.requestReferenceSpace('viewer').then(space => {
+            session.requestHitTestSource({ space }).then(source => {
+              this.hitSource = source;
+            });
+          });
+          this.hitSourceRequested = true;
+        }
+
+        if (this.hitSource) {
+          const results = frame.getHitTestResults(this.hitSource);
+          if (results.length > 0) {
+            const pose = results[0].getPose(this.sm.renderer.xr.getReferenceSpace());
+            this.reticle.visible = true;
+            this.reticle.matrix.fromArray(pose.transform.matrix);
+          } else {
+            this.reticle.visible = false;
+          }
+        }
+      }
+    }
+
+    /* =====================================================================
+       МОДУЛЬ 4: UIManager
+       Связывает HTML интерфейс с методами ObjectManager
+       ===================================================================== */
+    class UIManager {
+      constructor(objectManager) {
+        this.om = objectManager;
+        this.bindEvents();
+      }
+
+      bindEvents() {
+        // Выбор 3D-модели
+        const modelBtns = document.querySelectorAll('[data-model]');
+        modelBtns.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            modelBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            this.om.setModel(btn.dataset.model);
+          });
+        });
+
+        // Выбор цвета PBR
+        const colorPills = document.querySelectorAll('.color-pill');
+        colorPills.forEach(pill => {
+          pill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            colorPills.forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            this.om.setColor(pill.dataset.color);
+          });
+        });
+
+        // Вращение
+        const rotLeft = document.getElementById('btn-rot-left');
+        const rotRight = document.getElementById('btn-rot-right');
+        const rotAuto = document.getElementById('btn-rot-auto');
+
+        rotLeft.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.om.autoRotate = false;
+          rotAuto.classList.remove('active');
+          this.om.rotateY(-0.35);
+        });
+
+        rotRight.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.om.autoRotate = false;
+          rotAuto.classList.remove('active');
+          this.om.rotateY(0.35);
+        });
+
+        rotAuto.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.om.autoRotate = !this.om.autoRotate;
+          rotAuto.classList.toggle('active', this.om.autoRotate);
+        });
+
+        // Масштаб
+        document.getElementById('btn-scale-up').addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.om.changeScale(0.15);
+        });
+        document.getElementById('btn-scale-down').addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.om.changeScale(-0.15);
+        });
+        document.getElementById('btn-scale-reset').addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.om.resetScale();
+        });
+      }
+    }
+
+    /* =====================================================================
+       ТОЧКА ВХОДА (Main App)
+       ===================================================================== */
+    const sceneManager = new SceneManager();
+    const objectManager = new ObjectManager(sceneManager.scene);
+    const arController = new ARController(sceneManager, objectManager);
+    const uiManager = new UIManager(objectManager);
+
+    const clock = new THREE.Clock();
+
+    // Главный цикл рендера
+    sceneManager.renderer.setAnimationLoop((timestamp, frame) => {
+      const dt = clock.getDelta();
+      
+      objectManager.update(dt);
+      arController.updateHitTest(frame);
+
+      sceneManager.renderer.render(sceneManager.scene, sceneManager.camera);
+    });
+  </script>
+</body>
+</html>
